@@ -67,6 +67,10 @@ def main(app):
         app.build_settings = json.loads(inf.read())
     qt_exception_hook = UncaughtHook()
 
+    # Simplified-Chinese interface (see src/main/python/i18n/)
+    import i18n
+    i18n.install(app)
+
     # Not sure of the best way to do this.
     global window
     window = MainWindow(app)

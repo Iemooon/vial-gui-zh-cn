@@ -79,6 +79,13 @@ if __name__ == '__main__':
         appctxt = VialApplicationContext()       # 1. Instantiate ApplicationContext
         init_logger()
         qt_exception_hook = UncaughtHook()
+
+        # Simplified-Chinese interface (see src/main/python/i18n/).  Must run
+        # after QApplication exists and before any widget is built.  Delete
+        # these two lines to get the upstream English interface back.
+        import i18n
+        i18n.install(appctxt.app)
+
         window = MainWindow(appctxt)
         window.show()
         exit_code = appctxt.app.exec_()      # 2. Invoke appctxt.app.exec_()
