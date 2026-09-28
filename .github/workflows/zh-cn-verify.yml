@@ -1,0 +1,56 @@
+name: zh-cn verify
+
+on:
+  workflow_dispatch:
+
+# Temporary: runs after the three build workflows have produced artifacts, so we
+# can prove the Linux/macOS products actually contain the translated app instead
+# of trusting a green job.  Deleted once the checks have been recorded.
+
+jobs:
+  verify-linux:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: vial-linux
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        repository: Iemooon/vial-gui-zh-cn
+        run-id: 36391210733
+
+    - name: Extract and inspect the AppImage
+      run: |
+        set -e
+        chmod +x Vial-x86_64.AppImage
+        ./Vial-x86_64.AppImage --appimage-extract > /dev/null
+        echo "--- top level ---"
+        find squashfs-root -maxdepth 2 | head -30
+        echo "--- frozen app ---"
+        ls -la squashfs-root/usr/ 2>/dev/null | head
+        echo "--- python code + i18n ---"
+        find squashfs-root -iname '*i18n*' -o -iname 'zh_cn*' | head
+        echo "--- the packaged module list ---"
+        ls squashfs-root/usr/lib/python3.6/ 2>/dev/null | head
+
+  verify-mac:
+    runs-on: macos-15
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: vial-mac
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        repository: Iemooon/vial-gui-zh-cn
+        run-id: 36391207320
+
+    - name: Mount the dmg and inspect the bundle
+      run: |
+        set -e
+        hdiutil attach vial-mac.dmg -nobrowse -mountpoint /tmp/vial
+        echo "--- bundle ---"
+        ls -la /tmp/vial
+        find /tmp/vial -maxdepth 4 -name "*.app" -o -maxdepth 4 -name "Vial" | head
+        echo "--- payload ---"
+        find /tmp/vial -maxdepth 6 \( -iname '*i18n*' -o -iname 'zh_cn*' -o -name 'qmk_settings.json' \) | head
+        echo "--- dll/dylib sanity ---"
+        find /tmp/vial -name "*.dylib" | head -5
+        ls -la "/tmp/vial/Vial.app/Contents/MacOS/" 2>/dev/null | head
