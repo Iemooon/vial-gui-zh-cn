@@ -1,0 +1,19 @@
+name: zh-cn Linux
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build
+      run: ./util/linux-builder/build-in-docker.sh
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: vial-linux
+        path: util/linux-builder/output/Vial-x86_64.AppImage
