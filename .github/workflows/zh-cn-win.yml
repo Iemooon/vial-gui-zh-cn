@@ -36,9 +36,17 @@ jobs:
     # with the *2012* redistributable, which is a different package from the 2015
     # one installed above -- upstream's runners happen to have it, a fork's do
     # not.
+    #
+    # URL and hash come from Microsoft's own winget manifest for
+    # Microsoft.VCRedist.2012.x64 (11.0.61030.0); the download-center links that
+    # circulate in CI configs are long dead (they 404).  Verified locally: the
+    # payload carries msvcr110.dll/msvcp110.dll, i.e. revision 110, not 120.
     - name: Install Visual C++ Redistributable 2012
       run: |
-        Invoke-WebRequest -Uri "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-8BC6D9B8553F/vcredist_x64.exe" -OutFile "vcredist2012_x64.exe"
+        $url = "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe"
+        Invoke-WebRequest -Uri $url -OutFile "vcredist2012_x64.exe"
+        $want = "681BE3E5BA9FD3DA02C09D7E565ADFA078640ED66A0D58583EFAD2C1E3CC4064"
+        if ((Get-FileHash "vcredist2012_x64.exe" -Algorithm sha256).Hash -ne $want) { Write-Error "SHA256 mismatch" }
         Start-Process -FilePath "vcredist2012_x64.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait
         Remove-Item "vcredist2012_x64.exe"
         $dll = Get-ChildItem -Path "C:\Windows\System32\msvcr110.dll" -ErrorAction SilentlyContinue
