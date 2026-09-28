@@ -3,9 +3,10 @@ name: zh-cn verify
 on:
   workflow_dispatch:
 
-# Temporary: unpacks the Linux/macOS artifacts on their own platform so we can
-# prove the translated app is inside instead of trusting a green job.  Deleted
-# once the result is recorded.
+# Temporary: proves the Linux/macOS artifacts carry our translated modules, not
+# just a green build.  A green job says nothing about the payload; PyInstaller
+# compresses module names inside the PYZ archive, so reading the archive TOC is
+# the only way to see them.  Deleted once the result is recorded.
 
 jobs:
   verify-linux:
@@ -18,29 +19,34 @@ jobs:
         repository: Iemooon/vial-gui-zh-cn
         run-id: 36391210733
 
-    - name: Extract and inspect the AppImage
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Extract and read the archive TOC
       run: |
         set -e
         chmod +x Vial-x86_64.AppImage
         ./Vial-x86_64.AppImage --appimage-extract > /dev/null
-        echo "--- frozen app tree (opt/Vial) ---"
-        ls -la squashfs-root/opt/Vial/ | head -30
-        echo "--- Vial binary ---"
-        file squashfs-root/opt/Vial/Vial 2>/dev/null || ls -la squashfs-root/opt/Vial/Vial
-        echo "--- the bundled module archive ---"
-        ls -la squashfs-root/opt/Vial/*.pyz squashfs-root/opt/Vial/*.zip 2>/dev/null || true
-        echo "--- i18n: search the code, not the Qt libs ---"
-        find squashfs-root/opt/Vial -name 'libicu*' -prune -o -iname '*i18n*' -print -o -iname 'zh_cn*' -print
-        echo "--- does the archive carry our modules? ---"
-        for f in squashfs-root/opt/Vial/Vial squashfs-root/opt/Vial/*.pyz; do
-          [ -f "$f" ] || continue
-          echo "== $f"
-          strings -a "$f" | grep -x -e 'i18n' -e 'i18n.zh_cn' -e 'main' | sort -u | head
-        done
-        echo "--- qt translations present ---"
-        ls squashfs-root/opt/Vial/PyQt5/Qt/translations/ 2>/dev/null | head -5
-        echo "--- can the frozen app at least start? ---"
-        ./squashfs-root/AppRun --version 2>&1 | head -5 || echo "(no --version)"
+        pip install pyinstaller -q
+        python - <<'PY'
+        from PyInstaller.archive.readers import CArchiveReader
+        r = CArchiveReader("squashfs-root/opt/Vial/Vial")
+        print("archive entries:", len(r.toc))
+        for name in sorted(r.toc):
+            if name.lower().endswith(".pyz"):
+                print("  embedded archive:", name)
+        pyz = r.open_embedded_archive("PYZ-00.pyz")
+        mods = sorted(str(m) for m in pyz.toc)
+        print("PYZ modules:", len(mods))
+        for m in mods:
+            if "i18n" in m.lower():
+                print("  * FOUND:", m)
+        print("sample:", mods[:12])
+        PY
+        echo "--- and the packaged qmk settings size ---"
+        ls -la squashfs-root/opt/Vial/qmk_settings.json 2>/dev/null || \
+          find squashfs-root -name qmk_settings.json -exec ls -la {} \;
 
   verify-mac:
     runs-on: macos-15
@@ -52,18 +58,28 @@ jobs:
         repository: Iemooon/vial-gui-zh-cn
         run-id: 36391207320
 
-    - name: Mount the dmg and inspect the bundle
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Mount and read the archive TOC
       run: |
         set -e
         hdiutil attach vial-mac.dmg -nobrowse -mountpoint /tmp/vial
-        echo "--- volume root ---"
-        ls -la /tmp/vial
-        echo "--- bundle ---"
-        ls -la /tmp/vial/Vial.app/Contents/
-        ls -la /tmp/vial/Vial.app/Contents/MacOS/ | head -20
-        echo "--- i18n in the payload ---"
-        find /tmp/vial/Vial.app -name 'libicu*' -prune -o -iname '*i18n*' -print -o -iname 'zh_cn*' -print | head
-        echo "--- archive contents ---"
-        strings -a /tmp/vial/Vial.app/Contents/MacOS/Vial 2>/dev/null | grep -x -e 'i18n' -e 'i18n.zh_cn' | sort -u
-        echo "--- resources ---"
-        ls -la /tmp/vial/Vial.app/Contents/Resources/ 2>/dev/null | head -15
+        pip install pyinstaller -q
+        python - <<'PY'
+        from PyInstaller.archive.readers import CArchiveReader
+        exe = "/tmp/vial/Vial.app/Contents/MacOS/Vial"
+        r = CArchiveReader(exe)
+        print("archive entries:", len(r.toc))
+        for name in sorted(r.toc):
+            if name.lower().endswith(".pyz"):
+                print("  embedded archive:", name)
+        pyz = r.open_embedded_archive("PYZ-00.pyz")
+        mods = sorted(str(m) for m in pyz.toc)
+        print("PYZ modules:", len(mods))
+        for m in mods:
+            if "i18n" in m.lower():
+                print("  * FOUND:", m)
+        print("sample:", mods[:12])
+        PY
