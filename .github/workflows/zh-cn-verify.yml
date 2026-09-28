@@ -3,9 +3,9 @@ name: zh-cn verify
 on:
   workflow_dispatch:
 
-# Temporary: runs after the three build workflows have produced artifacts, so we
-# can prove the Linux/macOS products actually contain the translated app instead
-# of trusting a green job.  Deleted once the checks have been recorded.
+# Temporary: unpacks the Linux/macOS artifacts on their own platform so we can
+# prove the translated app is inside instead of trusting a green job.  Deleted
+# once the result is recorded.
 
 jobs:
   verify-linux:
@@ -23,14 +23,24 @@ jobs:
         set -e
         chmod +x Vial-x86_64.AppImage
         ./Vial-x86_64.AppImage --appimage-extract > /dev/null
-        echo "--- top level ---"
-        find squashfs-root -maxdepth 2 | head -30
-        echo "--- frozen app ---"
-        ls -la squashfs-root/usr/ 2>/dev/null | head
-        echo "--- python code + i18n ---"
-        find squashfs-root -iname '*i18n*' -o -iname 'zh_cn*' | head
-        echo "--- the packaged module list ---"
-        ls squashfs-root/usr/lib/python3.6/ 2>/dev/null | head
+        echo "--- frozen app tree (opt/Vial) ---"
+        ls -la squashfs-root/opt/Vial/ | head -30
+        echo "--- Vial binary ---"
+        file squashfs-root/opt/Vial/Vial 2>/dev/null || ls -la squashfs-root/opt/Vial/Vial
+        echo "--- the bundled module archive ---"
+        ls -la squashfs-root/opt/Vial/*.pyz squashfs-root/opt/Vial/*.zip 2>/dev/null || true
+        echo "--- i18n: search the code, not the Qt libs ---"
+        find squashfs-root/opt/Vial -name 'libicu*' -prune -o -iname '*i18n*' -print -o -iname 'zh_cn*' -print
+        echo "--- does the archive carry our modules? ---"
+        for f in squashfs-root/opt/Vial/Vial squashfs-root/opt/Vial/*.pyz; do
+          [ -f "$f" ] || continue
+          echo "== $f"
+          strings -a "$f" | grep -x -e 'i18n' -e 'i18n.zh_cn' -e 'main' | sort -u | head
+        done
+        echo "--- qt translations present ---"
+        ls squashfs-root/opt/Vial/PyQt5/Qt/translations/ 2>/dev/null | head -5
+        echo "--- can the frozen app at least start? ---"
+        ./squashfs-root/AppRun --version 2>&1 | head -5 || echo "(no --version)"
 
   verify-mac:
     runs-on: macos-15
@@ -46,11 +56,14 @@ jobs:
       run: |
         set -e
         hdiutil attach vial-mac.dmg -nobrowse -mountpoint /tmp/vial
-        echo "--- bundle ---"
+        echo "--- volume root ---"
         ls -la /tmp/vial
-        find /tmp/vial -maxdepth 4 -name "*.app" -o -maxdepth 4 -name "Vial" | head
-        echo "--- payload ---"
-        find /tmp/vial -maxdepth 6 \( -iname '*i18n*' -o -iname 'zh_cn*' -o -name 'qmk_settings.json' \) | head
-        echo "--- dll/dylib sanity ---"
-        find /tmp/vial -name "*.dylib" | head -5
-        ls -la "/tmp/vial/Vial.app/Contents/MacOS/" 2>/dev/null | head
+        echo "--- bundle ---"
+        ls -la /tmp/vial/Vial.app/Contents/
+        ls -la /tmp/vial/Vial.app/Contents/MacOS/ | head -20
+        echo "--- i18n in the payload ---"
+        find /tmp/vial/Vial.app -name 'libicu*' -prune -o -iname '*i18n*' -print -o -iname 'zh_cn*' -print | head
+        echo "--- archive contents ---"
+        strings -a /tmp/vial/Vial.app/Contents/MacOS/Vial 2>/dev/null | grep -x -e 'i18n' -e 'i18n.zh_cn' | sort -u
+        echo "--- resources ---"
+        ls -la /tmp/vial/Vial.app/Contents/Resources/ 2>/dev/null | head -15
