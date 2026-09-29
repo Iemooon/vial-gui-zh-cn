@@ -71,7 +71,6 @@ def apply_theme(app, name):
     Names are matched case-insensitively so a URL can say ?theme=light.
     """
     import themes
-    from PyQt5.QtGui import QPalette
 
     wanted = str(name or "").strip().lower()
     match = next((n for n in _theme_names() if n.lower() == wanted), None)
@@ -91,8 +90,8 @@ def apply_theme(app, name):
 
 def add_theme_menu(app, window):
     """Put the Theme menu back on the menu bar (web build only)."""
-    from PyQt5.QtGui import QActionGroup
-    from PyQt5.QtWidgets import QAction
+    # Qt5 keeps both of these in QtWidgets; QActionGroup only moved to QtGui in Qt6.
+    from PyQt5.QtWidgets import QAction, QActionGroup
 
     from util import tr
 
