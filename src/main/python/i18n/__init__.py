@@ -27,6 +27,7 @@ import io
 import json
 import os
 import re
+import sys
 
 from PyQt5.QtCore import QCoreApplication, QTranslator
 
@@ -42,6 +43,7 @@ _COLLECT_PATH = os.environ.get("VIAL_ZH_COLLECT")
 _seen = set()
 _translator = None
 _hooks_installed = False
+_font_family = None
 _any_context = None
 
 
@@ -387,9 +389,52 @@ def _install_hooks():
         pass
 
 
+# Where the packaging layer may drop a CJK face for the WebAssembly build.
+#
+# Qt compiled to WASM has no access to the operating system's fonts: it renders
+# text itself through FreeType, over whatever font files it is given.  Upstream
+# works around this for key labels by falling back to ASCII text
+# (keycodes/keycodes.py: "we cannot embed full CJK fonts due to large size").
+# A Chinese interface cannot do that, so vial-web-zh-cn ships Noto Sans SC
+# inside the preloaded filesystem and this function registers it.
+#
+# Desktop builds keep their system fonts and are left completely alone.
+_FONT_CANDIDATES = [
+    "/usr/local/fonts/NotoSansSC-Regular.otf",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 "fonts", "NotoSansSC-Regular.otf"),
+]
+
+
+def ensure_cjk_font(app):
+    """Make a bundled CJK font the application default under Emscripten.
+
+    Returns the family name that was activated, or None when there is nothing
+    to activate (which is the normal case on desktop).
+    """
+    if sys.platform != "emscripten":
+        return None
+    from PyQt5.QtGui import QFontDatabase
+
+    for path in _FONT_CANDIDATES:
+        if not os.path.exists(path):
+            continue
+        font_id = QFontDatabase.addApplicationFont(path)
+        if font_id < 0:
+            continue
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        if not families:
+            continue
+        font = app.font()
+        font.setFamily(families[0])
+        app.setFont(font)
+        return families[0]
+    return None
+
+
 def install(app=None):
-    """Install the translator and the widget hooks. Idempotent."""
-    global _translator, _hooks_installed
+    """Install the translator, the widget hooks and the CJK font. Idempotent."""
+    global _translator, _hooks_installed, _font_family
     if app is None:
         from PyQt5.QtWidgets import QApplication
         app = QApplication.instance()
@@ -402,4 +447,7 @@ def install(app=None):
     if not _hooks_installed:
         _install_hooks()
         _hooks_installed = True
+    if _font_family is None:
+        # "" records "looked, found nothing" so the search runs only once
+        _font_family = ensure_cjk_font(app) or ""
     return _translator

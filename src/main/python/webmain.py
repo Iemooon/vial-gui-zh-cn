@@ -57,7 +57,63 @@ def web_get_resource(name):
     return "/usr/local/" + name
 
 
-def main(app):
+def _theme_names():
+    """("System", "Light", "Dark", ...) -- the same list the desktop menu shows."""
+    import themes
+    return [name for name, _ in [("System", None)] + themes.themes]
+
+
+def apply_theme(app, name):
+    """Switch the palette without the desktop build's restart warning.
+
+    Upstream hides the whole Theme menu under Emscripten (main_window.py:221),
+    but the palettes in themes.py are pure Python and apply just fine here.
+    """
+    import themes
+    from PyQt5.QtGui import QPalette
+
+    if name not in _theme_names():
+        return False
+    if name == "System":
+        # Theme.set_theme() deliberately does nothing for "System", which would
+        # leave the previous palette painted on the screen.
+        themes.Theme.theme = name
+        app.setStyle("Fusion")
+        app.setPalette(app.style().standardPalette())
+    else:
+        themes.Theme.set_theme(name)
+    return True
+
+
+def add_theme_menu(app, window):
+    """Put the Theme menu back on the menu bar (web build only)."""
+    from PyQt5.QtGui import QActionGroup
+    from PyQt5.QtWidgets import QAction
+
+    from util import tr
+
+    menu = window.menuBar().addMenu(tr("Menu", "Theme"))
+    group = QActionGroup(window)
+    current = str(window.get_theme() or "System")
+    for name in _theme_names():
+        act = QAction(tr("MenuTheme", name), window)
+        act.setCheckable(True)
+        act.setChecked(name == current)
+        act.triggered.connect(lambda checked, n=name: _choose_theme(app, window, n))
+        group.addAction(act)
+        menu.addAction(act)
+    return menu
+
+
+def _choose_theme(app, window, name):
+    apply_theme(app, name)
+    try:
+        window.settings.setValue("theme", name)
+    except Exception:
+        pass
+
+
+def main(app, theme=None):
     font = app.font()
     font.setPointSize(10)
     app.setFont(font)
@@ -74,6 +130,14 @@ def main(app):
     # Not sure of the best way to do this.
     global window
     window = MainWindow(app)
+
+    # The page passes ?theme=light through here; the menu is there for the
+    # session, the URL is what survives a reload (the WASM filesystem is
+    # recreated on every load, so QSettings does not persist).
+    add_theme_menu(app, window)
+    if theme:
+        apply_theme(app, theme)
+
     window.show()
 
     app.processEvents()
