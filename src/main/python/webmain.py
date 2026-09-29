@@ -68,12 +68,16 @@ def apply_theme(app, name):
 
     Upstream hides the whole Theme menu under Emscripten (main_window.py:221),
     but the palettes in themes.py are pure Python and apply just fine here.
+    Names are matched case-insensitively so a URL can say ?theme=light.
     """
     import themes
     from PyQt5.QtGui import QPalette
 
-    if name not in _theme_names():
+    wanted = str(name or "").strip().lower()
+    match = next((n for n in _theme_names() if n.lower() == wanted), None)
+    if match is None:
         return False
+    name = match
     if name == "System":
         # Theme.set_theme() deliberately does nothing for "System", which would
         # leave the previous palette painted on the screen.
