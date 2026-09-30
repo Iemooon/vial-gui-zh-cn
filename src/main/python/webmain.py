@@ -57,6 +57,14 @@ def web_get_resource(name):
     return "/usr/local/" + name
 
 
+# The web build starts in the light palette.  Upstream's default comes from
+# main_window.get_theme() -> QSettings("Vial","Vial").value("theme", "Dark"),
+# and a browser cannot keep that setting across a reload, so "Dark" is what
+# everyone gets today.  Desktop builds are untouched; override per load with
+# ?theme=dark|system|light.
+DEFAULT_THEME = "Light"
+
+
 def _theme_names():
     """("System", "Light", "Dark", ...) -- the same list the desktop menu shows."""
     import themes
@@ -88,7 +96,7 @@ def apply_theme(app, name):
     return True
 
 
-def add_theme_menu(app, window):
+def add_theme_menu(app, window, current=None):
     """Put the Theme menu back on the menu bar (web build only)."""
     # Qt5 keeps both of these in QtWidgets; QActionGroup only moved to QtGui in Qt6.
     from PyQt5.QtWidgets import QAction, QActionGroup
@@ -97,11 +105,11 @@ def add_theme_menu(app, window):
 
     menu = window.menuBar().addMenu(tr("Menu", "Theme"))
     group = QActionGroup(window)
-    current = str(window.get_theme() or "System")
+    wanted = str(current or window.get_theme() or "System").lower()
     for name in _theme_names():
         act = QAction(tr("MenuTheme", name), window)
         act.setCheckable(True)
-        act.setChecked(name == current)
+        act.setChecked(name.lower() == wanted)
         act.triggered.connect(lambda checked, n=name: _choose_theme(app, window, n))
         group.addAction(act)
         menu.addAction(act)
@@ -134,12 +142,13 @@ def main(app, theme=None):
     global window
     window = MainWindow(app)
 
-    # The page passes ?theme=light through here; the menu is there for the
-    # session, the URL is what survives a reload (the WASM filesystem is
-    # recreated on every load, so QSettings does not persist).
-    add_theme_menu(app, window)
-    if theme:
-        apply_theme(app, theme)
+    # Theme: MainWindow has already painted upstream's default (Dark, read from
+    # QSettings which a browser cannot persist), so apply ours after it is
+    # built and before it is shown.  ?theme= from the page wins over the
+    # default; the menu is there for the current session only.
+    chosen = theme or DEFAULT_THEME
+    add_theme_menu(app, window, current=chosen)
+    apply_theme(app, chosen)
 
     window.show()
 
